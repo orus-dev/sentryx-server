@@ -5,10 +5,12 @@ ws.onopen = () => {
   ws.send("my-key");
   ws.send(
     JSON.stringify({
-      repo: "git@github.com:osui-rs/osui.git",
-      branch: "master",
-      install_command: "",
-      run_command: "cargo run",
+      Uninstall: {
+        repo: "git@github.com:osui-rs/osui.git",
+        branch: "master",
+        install_command: "",
+        run_command: "cargo run",
+      }
     })
   );
 };
