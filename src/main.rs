@@ -1,7 +1,7 @@
 pub mod app_manager;
 pub mod server_config;
 
-use crate::app_manager::{install_app, App};
+use crate::app_manager::{get_app_by_id, get_app_by_id_mut, install_app, App};
 use crate::server_config::ServerStats;
 use std::sync::Arc;
 use std::thread::spawn;
@@ -12,8 +12,13 @@ use tungstenite::accept;
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub enum Method {
     Install(App),
-    SetEnabled(usize, bool),
-    Edit(usize, App),
+    SetEnabled(String, bool),
+    Edit(String, App),
+    Uninstall(String),
+    Toggle(String, bool),
+    Start(String),
+    Stop(String),
+    Restart(String),
 }
 
 fn main() {
@@ -67,19 +72,47 @@ fn main() {
                         install_app(&mut apps, app);
                     }
                     Method::SetEnabled(i, b) => {
-                        if let Some(app) = apps.get_mut(i) {
-                        } else {
-                            eprintln!("App index {} not found", i);
+                        let app = get_app_by_id_mut(&mut apps, &i).expect("App not found");
+                        if let Some(id) = app.id_system() {
+                            app_manager::toggle_app_state(&format!("{}.service", id), b);
                         }
                         app_manager::save_apps(&apps);
                     }
                     Method::Edit(i, app) => {
-                        if let Some(existing_app) = apps.get_mut(i) {
-                            *existing_app = app;
-                        } else {
-                            eprintln!("App index {} not found", i);
-                        }
+                        let existing_app = get_app_by_id_mut(&mut apps, &i).expect("App not found");
+                        *existing_app = app;
                         app_manager::save_apps(&apps);
+                    }
+                    Method::Uninstall(id) => {
+                        app_manager::uninstall_app(&mut apps, &id);
+                    }
+                    Method::Toggle(id, enable) => {
+                        let id = get_app_by_id(&mut apps, &id)
+                            .expect("App not found")
+                            .id_system()
+                            .unwrap();
+                        app_manager::toggle_app_state(&format!("{}.service", id), enable);
+                    }
+                    Method::Start(id) => {
+                        let id = get_app_by_id(&mut apps, &id)
+                            .expect("App not found")
+                            .id_system()
+                            .unwrap();
+                        app_manager::start_app(&format!("{}.service", id));
+                    }
+                    Method::Stop(id) => {
+                        let id = get_app_by_id(&mut apps, &id)
+                            .expect("App not found")
+                            .id_system()
+                            .unwrap();
+                        app_manager::stop_app(&format!("{}.service", id));
+                    }
+                    Method::Restart(id) => {
+                        let id = get_app_by_id(&mut apps, &id)
+                            .expect("App not found")
+                            .id_system()
+                            .unwrap();
+                        app_manager::restart_app(&format!("{}.service", id));
                     }
                 }
             });

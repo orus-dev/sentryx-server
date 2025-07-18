@@ -70,6 +70,14 @@ fn apps_file_path() -> PathBuf {
     apps_dir().join("apps.json")
 }
 
+fn update_systemd() {
+    Command::new("systemctl")
+        .arg("--user")
+        .arg("daemon-reload")
+        .status()
+        .expect("Failed to reload systemd daemon");
+}
+
 pub fn init() -> Vec<App> {
     let path = apps_file_path();
 
@@ -94,6 +102,22 @@ pub fn save_apps(apps: &[App]) {
 }
 
 pub fn uninstall_app(apps: &mut Vec<App>, id: &str) {
+    let id = {
+        let url = id.trim_end_matches(".git");
+
+        if url.starts_with("git@") {
+            // Format: git@github.com:usr/repo
+            url.split_once(':').map(|(_, path)| path.to_string())
+        } else if url.starts_with("https://") || url.starts_with("http://") {
+            // Format: https://github.com/usr/repo
+            url.split_once("github.com/")
+                .map(|(_, path)| path.to_string())
+        } else {
+            None
+        }
+    }
+    .unwrap();
+
     if let Some(index) = apps
         .iter()
         .position(|app| app.id().expect("Unable to obtain id") == id)
@@ -116,9 +140,13 @@ pub fn uninstall_app(apps: &mut Vec<App>, id: &str) {
             app.id_system().expect("Unable to obtain id")
         ));
 
+        println!("Removing service file: {:?}", service_path);
+
         remove_file(service_path).unwrap_or_else(|e| {
             eprintln!("Failed to remove service file: {}", e);
         });
+
+        update_systemd();
 
         apps.remove(index);
         save_apps(apps);
@@ -201,6 +229,8 @@ pub fn install_app(apps: &mut Vec<App>, app: App) {
         return;
     }
 
+    update_systemd();
+
     // Add to app list and save
     apps.push(app);
     save_apps(apps);
@@ -239,4 +269,12 @@ pub fn restart_app(id: &str) {
         .arg(id)
         .status()
         .expect("Failed to restart app");
+}
+
+pub fn get_app_by_id<'a>(apps: &'a [App], id: &str) -> Option<&'a App> {
+    apps.iter().find(|app| app.id() == Some(id.to_string()))
+}
+
+pub fn get_app_by_id_mut<'a>(apps: &'a mut [App], id: &str) -> Option<&'a mut App> {
+    apps.iter_mut().find(|app| app.id() == Some(id.to_string()))
 }
