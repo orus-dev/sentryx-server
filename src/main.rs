@@ -1,11 +1,13 @@
+pub mod app_manager;
 pub mod server_config;
 
-use std::net::TcpListener;
 use std::sync::Arc;
 use std::thread::spawn;
+use std::{net::TcpListener, sync::Mutex};
 use sysinfo::{Disks, Networks, System};
 use tungstenite::accept;
 
+use crate::app_manager::{install_app, App};
 use crate::server_config::ServerStats;
 fn get_system_info(sys: &mut System, networks: &Networks, disks: &Disks) -> ServerStats {
     let cpus = sys.cpus();
@@ -36,19 +38,26 @@ fn get_system_info(sys: &mut System, networks: &Networks, disks: &Disks) -> Serv
 }
 
 fn main() {
+    let apps = app_manager::run_apps();
+
     let server = TcpListener::bind("127.0.0.1:5273").unwrap();
     for stream in server.incoming() {
+        let mut apps = apps.clone();
+
         spawn(move || {
-            let mut websocket = accept(stream.unwrap()).unwrap();
+            let websocket = Arc::new(Mutex::new(accept(stream.unwrap()).unwrap()));
+            let reader_socket = Arc::clone(&websocket);
             let config = Arc::new(server_config::ServerConfig::new());
 
             {
-                let master_key = websocket.read().unwrap();
+                let master_key = reader_socket.lock().unwrap().read().unwrap();
 
                 if !master_key.is_text()
                     || master_key.to_text().unwrap() != config.master_key.clone()
                 {
                     websocket
+                        .lock()
+                        .unwrap()
                         .send(tungstenite::Message::text("!Invalid master key"))
                         .unwrap();
 
@@ -56,15 +65,32 @@ fn main() {
                 }
 
                 websocket
+                    .lock()
+                    .unwrap()
                     .send(tungstenite::Message::text("Success"))
                     .unwrap();
             }
+
+            std::thread::spawn(move || loop {
+                let app: App = serde_json::from_str(
+                    &reader_socket
+                        .lock()
+                        .unwrap()
+                        .read()
+                        .unwrap()
+                        .to_text()
+                        .unwrap(),
+                )
+                .unwrap();
+
+                install_app(&mut apps, app);
+            });
 
             let mut sys = System::new_all();
             let mut networks = Networks::new();
             let mut disks = Disks::new();
 
-            while websocket.can_write() {
+            while websocket.lock().unwrap().can_write() {
                 sys.refresh_all();
                 std::thread::sleep(std::time::Duration::from_millis(200));
                 sys.refresh_all();
@@ -72,6 +98,8 @@ fn main() {
                 disks.refresh(true);
 
                 websocket
+                    .lock()
+                    .unwrap()
                     .send(tungstenite::Message::text(
                         serde_json::to_string(&get_system_info(&mut sys, &networks, &disks))
                             .unwrap(),
