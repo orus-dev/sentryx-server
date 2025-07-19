@@ -73,9 +73,17 @@ async fn get_apps(query: web::Query<Auth>) -> Result<impl Responder> {
             units
                 .iter()
                 .map(|v| match systemctl.status(v) {
-                    Ok(unit) => serde_json::to_value(service::parse_service(unit)).unwrap(),
-                    Err(_) => json!({ "name": v, "status": "undefined" }),
+                    Ok(unit) => {
+                        let a = service::parse_service(unit);
+                        // In the case of debugging, i found out these have a pattern of .target or .device
+                        // if a.all_fields_none() {
+                        //     println!("\n--START--\n{v}\n--END--\n");
+                        // }
+                        a
+                    }
+                    Err(_) => service::parse_service(String::new()),
                 })
+                .filter(|i| !i.all_fields_none())
                 .collect::<Vec<_>>(),
         )),
         Err(e) => Err(actix_web::error::ErrorInternalServerError(format!(

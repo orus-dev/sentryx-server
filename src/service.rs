@@ -15,7 +15,6 @@ pub struct Service {
     pub trigger: Option<String>,
     pub triggers: Option<String>,
     pub docs: Option<String>,
-    // Other fields can be added as needed
 }
 
 lazy_static! {
@@ -61,5 +60,21 @@ pub fn parse_service(input: String) -> Service {
             triggers: None,
             docs: None,
         }
+    }
+}
+
+impl Service {
+    pub fn all_fields_none(&self) -> bool {
+        self.name.is_none()
+            && self.description.is_none()
+            && self.loaded_status.is_none()
+            && self.unit_file_path.is_none()
+            && self.enabled.is_none()
+            && self.preset.is_none()
+            && self.active.is_none()
+            && self.active_state.is_none()
+            && self.trigger.is_none()
+            && self.triggers.is_none()
+            && self.docs.is_none()
     }
 }
