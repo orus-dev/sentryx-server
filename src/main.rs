@@ -204,7 +204,7 @@ async fn main() -> std::io::Result<()> {
             .service(stop_app)
             .service(restart_app)
     })
-    .bind(("127.0.0.1", 8080))?
+    .bind(("0.0.0.0", 63774))?
     .run()
     .await
 }
