@@ -8,7 +8,9 @@ SERVICE_NAME="sentryx-server"
 SERVICE_FILE="$HOME/.config/systemd/user/$SERVICE_NAME.service"
 CARGO_BIN="$(which cargo)"
 
-mv $INSTALL_DIR $INSTALL_DIR+"-backup"
+if [ -d $INSTALL_DIR ]; then
+    mv $INSTALL_DIR $INSTALL_DIR"-backup"
+fi
 
 # Step 1: Clone the repo
 if [ -d "$INSTALL_DIR" ]; then
