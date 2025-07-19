@@ -17,26 +17,26 @@ ws.onmessage = (msg) => console.log("Received:", msg.data);
 ws.onopen = () => {
   ws.send("my-key");
 
-  ws.send(
-    JSON.stringify({
-      Install: {
-        repo: "git@github.com:osui-rs/osui.git",
-        branch: "master",
-        install_command: "",
-        run_command: "cargo run",
-      }
-    })
-  );
+  // ws.send(
+  //   JSON.stringify({
+  //     Install: {
+  //       repo: "git@github.com:osui-rs/osui.git",
+  //       branch: "master",
+  //       install_command: "",
+  //       run_command: "cargo run",
+  //     }
+  //   })
+  // );
+
+  // ws.send(
+  //   JSON.stringify({
+  //     SetEnabled: ["osui-rs/osui", true]
+  //   })
+  // );
 
   ws.send(
     JSON.stringify({
-      SetEnabled: ["osui-rs/osui", true]
-    })
-  );
-
-  ws.send(
-    JSON.stringify({
-      Start: "osui-rs/osui"
+      Start: 0
     })
   );
 

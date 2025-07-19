@@ -101,58 +101,40 @@ pub fn save_apps(apps: &[App]) {
     fs::write(path, json).expect("Failed to write apps.json");
 }
 
-pub fn uninstall_app(apps: &mut Vec<App>, id: &str) {
-    let id = {
-        let url = id.trim_end_matches(".git");
+pub fn uninstall_app(apps: &mut Vec<App>, index: usize) {
+    if index >= apps.len() {
+        eprintln!("Invalid app index: {}", index);
+        return;
+    }
 
-        if url.starts_with("git@") {
-            // Format: git@github.com:usr/repo
-            url.split_once(':').map(|(_, path)| path.to_string())
-        } else if url.starts_with("https://") || url.starts_with("http://") {
-            // Format: https://github.com/usr/repo
-            url.split_once("github.com/")
-                .map(|(_, path)| path.to_string())
+    let app = &apps[index];
+    let repo_dir = apps_dir().join(app.repo_folder_name());
+
+    if repo_dir.exists() {
+        if let Err(e) = fs::remove_dir_all(&repo_dir) {
+            eprintln!("Failed to remove directory {:?}: {}", repo_dir, e);
         } else {
-            None
+            println!("Removed app: {}", app.repo_folder_name());
         }
     }
-    .unwrap();
 
-    if let Some(index) = apps
-        .iter()
-        .position(|app| app.id().expect("Unable to obtain id") == id)
-    {
-        let app = &apps[index];
-        let repo_dir = apps_dir().join(app.repo_folder_name());
+    let user_systemd_dir = home_dir().join(".config/systemd/user");
 
-        if repo_dir.exists() {
-            if let Err(e) = fs::remove_dir_all(&repo_dir) {
-                eprintln!("Failed to remove directory {:?}: {}", repo_dir, e);
-            } else {
-                println!("Removed app: {}", id);
-            }
-        }
+    let service_path = user_systemd_dir.join(format!(
+        "{}.service",
+        app.id_system().expect("Unable to obtain id")
+    ));
 
-        let user_systemd_dir = home_dir().join(".config/systemd/user");
+    println!("Removing service file: {:?}", service_path);
 
-        let service_path = user_systemd_dir.join(format!(
-            "{}.service",
-            app.id_system().expect("Unable to obtain id")
-        ));
+    remove_file(service_path).unwrap_or_else(|e| {
+        eprintln!("Failed to remove service file: {}", e);
+    });
 
-        println!("Removing service file: {:?}", service_path);
+    update_systemd();
 
-        remove_file(service_path).unwrap_or_else(|e| {
-            eprintln!("Failed to remove service file: {}", e);
-        });
-
-        update_systemd();
-
-        apps.remove(index);
-        save_apps(apps);
-    } else {
-        eprintln!("App not found: {}", id);
-    }
+    apps.remove(index);
+    save_apps(apps);
 }
 
 pub fn install_app(apps: &mut Vec<App>, app: App) {
@@ -236,45 +218,50 @@ pub fn install_app(apps: &mut Vec<App>, app: App) {
     save_apps(apps);
 }
 
-pub fn toggle_app_state(id: &str, enable: bool) {
-    Command::new("systemctl")
-        .arg("--user")
-        .arg(if enable { "enable" } else { "disable" })
-        .arg(id)
-        .status()
-        .expect("Failed to toggle app enable state");
+pub fn toggle_app_state(apps: &[App], index: usize, enable: bool) {
+    if let Some(app) = apps.get(index) {
+        let id = app.id_system().expect("Unable to obtain id");
+        Command::new("systemctl")
+            .arg("--user")
+            .arg(if enable { "enable" } else { "disable" })
+            .arg(format!("{}.service", id))
+            .status()
+            .expect("Failed to toggle app state");
+    }
 }
 
-pub fn start_app(id: &str) {
-    Command::new("systemctl")
-        .arg("--user")
-        .arg("start")
-        .arg(id)
-        .status()
-        .expect("Failed to start app");
+pub fn start_app(apps: &[App], index: usize) {
+    if let Some(app) = apps.get(index) {
+        let id = app.id_system().expect("Unable to obtain id");
+        Command::new("systemctl")
+            .arg("--user")
+            .arg("start")
+            .arg(format!("{}.service", id))
+            .status()
+            .expect("Failed to start app");
+    }
 }
 
-pub fn stop_app(id: &str) {
-    Command::new("systemctl")
-        .arg("--user")
-        .arg("stop")
-        .arg(id)
-        .status()
-        .expect("Failed to stop app");
+pub fn stop_app(apps: &[App], index: usize) {
+    if let Some(app) = apps.get(index) {
+        let id = app.id_system().expect("Unable to obtain id");
+        Command::new("systemctl")
+            .arg("--user")
+            .arg("stop")
+            .arg(format!("{}.service", id))
+            .status()
+            .expect("Failed to stop app");
+    }
 }
 
-pub fn restart_app(id: &str) {
-    Command::new("systemctl")
-        .arg("restart")
-        .arg(id)
-        .status()
-        .expect("Failed to restart app");
-}
-
-pub fn get_app_by_id<'a>(apps: &'a [App], id: &str) -> Option<&'a App> {
-    apps.iter().find(|app| app.id() == Some(id.to_string()))
-}
-
-pub fn get_app_by_id_mut<'a>(apps: &'a mut [App], id: &str) -> Option<&'a mut App> {
-    apps.iter_mut().find(|app| app.id() == Some(id.to_string()))
+pub fn restart_app(apps: &[App], index: usize) {
+    if let Some(app) = apps.get(index) {
+        let id = app.id_system().expect("Unable to obtain id");
+        Command::new("systemctl")
+            .arg("--user")
+            .arg("restart")
+            .arg(format!("{}.service", id))
+            .status()
+            .expect("Failed to restart app");
+    }
 }

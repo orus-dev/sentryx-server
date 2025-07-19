@@ -1,7 +1,6 @@
 pub mod app_manager;
 pub mod server_config;
 
-use crate::app_manager::{get_app_by_id, get_app_by_id_mut, install_app, App};
 use crate::server_config::ServerStats;
 use std::sync::Arc;
 use std::thread::spawn;
@@ -11,20 +10,22 @@ use tungstenite::accept;
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub enum Method {
-    Install(App),
-    SetEnabled(String, bool),
-    Edit(String, App),
-    Uninstall(String),
-    Toggle(String, bool),
-    Start(String),
-    Stop(String),
-    Restart(String),
+    Install(app_manager::App),
+    Edit(usize, app_manager::App),
+    Uninstall(usize),
+    Toggle(usize, bool),
+    Start(usize),
+    Stop(usize),
+    Restart(usize),
 }
 
 fn main() {
+    println!("SentryX server starting...");
     let apps = app_manager::init();
+    println!("Loaded {} apps", apps.len());
 
-    let server = TcpListener::bind("127.0.0.1:5273").unwrap();
+    let server = TcpListener::bind("0.0.0.0:5273").unwrap();
+    println!("Listening on 127.0.0.1:5273");
     for stream in server.incoming() {
         let mut apps = apps.clone();
 
@@ -32,6 +33,7 @@ fn main() {
             let websocket = Arc::new(Mutex::new(accept(stream.unwrap()).unwrap()));
             let reader_socket = Arc::clone(&websocket);
             let config = Arc::new(server_config::ServerConfig::new());
+            println!("Client connected, awaiting master key...");
 
             {
                 let master_key = reader_socket.lock().unwrap().read().unwrap();
@@ -39,14 +41,16 @@ fn main() {
                 if !master_key.is_text()
                     || master_key.to_text().unwrap() != config.master_key.clone()
                 {
+                    println!("Invalid master key from client");
                     websocket
                         .lock()
                         .unwrap()
                         .send(tungstenite::Message::text("!Invalid master key"))
                         .unwrap();
-
                     return;
                 }
+
+                println!("Client authenticated successfully");
 
                 websocket
                     .lock()
@@ -67,52 +71,39 @@ fn main() {
                 )
                 .unwrap();
 
+                println!("Received command: {:?}", mth);
+
                 match mth {
                     Method::Install(app) => {
-                        install_app(&mut apps, app);
-                    }
-                    Method::SetEnabled(i, b) => {
-                        let app = get_app_by_id_mut(&mut apps, &i).expect("App not found");
-                        if let Some(id) = app.id_system() {
-                            app_manager::toggle_app_state(&format!("{}.service", id), b);
-                        }
-                        app_manager::save_apps(&apps);
+                        println!("→ Installing app: {}", app.repo);
+                        app_manager::install_app(&mut apps, app);
                     }
                     Method::Edit(i, app) => {
-                        let existing_app = get_app_by_id_mut(&mut apps, &i).expect("App not found");
-                        *existing_app = app;
-                        app_manager::save_apps(&apps);
+                        println!("→ Editing app at index {}: {}", i, app.repo);
+                        if let Some(existing_app) = apps.get_mut(i) {
+                            *existing_app = app;
+                            app_manager::save_apps(&apps);
+                        }
                     }
-                    Method::Uninstall(id) => {
-                        app_manager::uninstall_app(&mut apps, &id);
+                    Method::Uninstall(i) => {
+                        println!("→ Uninstalling app at index {}", i);
+                        app_manager::uninstall_app(&mut apps, i);
                     }
-                    Method::Toggle(id, enable) => {
-                        let id = get_app_by_id(&mut apps, &id)
-                            .expect("App not found")
-                            .id_system()
-                            .unwrap();
-                        app_manager::toggle_app_state(&format!("{}.service", id), enable);
+                    Method::Toggle(index, enable) => {
+                        println!("→ Toggling app at index {} to {}", index, enable);
+                        app_manager::toggle_app_state(&apps, index, enable);
                     }
-                    Method::Start(id) => {
-                        let id = get_app_by_id(&mut apps, &id)
-                            .expect("App not found")
-                            .id_system()
-                            .unwrap();
-                        app_manager::start_app(&format!("{}.service", id));
+                    Method::Start(index) => {
+                        println!("→ Starting app at index {}", index);
+                        app_manager::start_app(&apps, index);
                     }
-                    Method::Stop(id) => {
-                        let id = get_app_by_id(&mut apps, &id)
-                            .expect("App not found")
-                            .id_system()
-                            .unwrap();
-                        app_manager::stop_app(&format!("{}.service", id));
+                    Method::Stop(index) => {
+                        println!("→ Stopping app at index {}", index);
+                        app_manager::stop_app(&apps, index);
                     }
-                    Method::Restart(id) => {
-                        let id = get_app_by_id(&mut apps, &id)
-                            .expect("App not found")
-                            .id_system()
-                            .unwrap();
-                        app_manager::restart_app(&format!("{}.service", id));
+                    Method::Restart(index) => {
+                        println!("→ Restarting app at index {}", index);
+                        app_manager::restart_app(&apps, index);
                     }
                 }
             });
@@ -128,6 +119,7 @@ fn main() {
                 networks.refresh(true);
                 disks.refresh(true);
 
+                println!("→ Sending system stats update...");
                 websocket
                     .lock()
                     .unwrap()
@@ -139,6 +131,7 @@ fn main() {
 
                 std::thread::sleep(std::time::Duration::from_secs(2));
             }
+            println!("Client disconnected, cleaning up...");
         });
     }
 }
