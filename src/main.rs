@@ -1,12 +1,26 @@
-mod app_manager;
 mod server_config;
-use actix_web::{get, post, web, App, HttpServer, Responder, Result};
+mod service;
+use actix_web::{
+    get,
+    web::{self},
+    App, HttpServer, Responder, Result,
+};
+use serde_json::json;
 use sysinfo::{Disks, Networks, System};
 
-use crate::server_config::ServerStats;
+use crate::server_config::{validate_master_key, ServerStats};
+
+#[derive(serde::Deserialize)]
+struct Auth {
+    auth: String,
+}
 
 #[get("/")]
-async fn sys_info() -> Result<impl Responder> {
+async fn sys_info(query: web::Query<Auth>) -> Result<impl Responder> {
+    if !validate_master_key(&query.auth) {
+        return Err(actix_web::error::ErrorUnauthorized("Invalid master key"));
+    }
+
     let mut sys = System::new_all();
     let mut disks: Disks = Disks::new_with_refreshed_list();
     let mut networks: Networks = Networks::new_with_refreshed_list();
@@ -48,17 +62,124 @@ async fn sys_info() -> Result<impl Responder> {
 }
 
 #[get("/apps")]
-async fn get_apps() -> Result<impl Responder> {
-    let apps = app_manager::init();
-    Ok(web::Json(apps))
+async fn get_apps(query: web::Query<Auth>) -> Result<impl Responder> {
+    if !validate_master_key(&query.auth) {
+        return Err(actix_web::error::ErrorUnauthorized("Invalid master key"));
+    }
+
+    let systemctl = systemctl::SystemCtl::default();
+    match systemctl.list_units(None, None, None) {
+        Ok(units) => Ok(web::Json(
+            units
+                .iter()
+                .map(|v| match systemctl.status(v) {
+                    Ok(unit) => serde_json::to_value(service::parse_service(unit)).unwrap(),
+                    Err(_) => json!({ "name": v, "status": "undefined" }),
+                })
+                .collect::<Vec<_>>(),
+        )),
+        Err(e) => Err(actix_web::error::ErrorInternalServerError(format!(
+            "Failed to list units: {}",
+            e
+        ))),
+    }
 }
 
-#[get("/app/{app_index}")]
-async fn get_app(id: web::Path<usize>) -> Result<impl Responder> {
-    let apps = app_manager::init();
-    match apps.get(*id) {
-        Some(app) => Ok(web::Json(app.clone())),
-        None => Err(actix_web::error::ErrorNotFound("App not found")),
+#[get("/apps/{app}")]
+async fn get_app(id: web::Path<String>, query: web::Query<Auth>) -> Result<impl Responder> {
+    if !validate_master_key(&query.auth) {
+        return Err(actix_web::error::ErrorUnauthorized("Invalid master key"));
+    }
+
+    let systemctl = systemctl::SystemCtl::default();
+    match systemctl.status(&*id) {
+        Ok(unit) => Ok(web::Json(
+            serde_json::to_value(service::parse_service(unit)).unwrap(),
+        )),
+        Err(e) => Err(actix_web::error::ErrorInternalServerError(format!(
+            "Failed to get unit: {}",
+            e
+        ))),
+    }
+}
+
+#[get("/enable/{app}")]
+async fn enable_app(id: web::Path<String>, query: web::Query<Auth>) -> Result<impl Responder> {
+    if !validate_master_key(&query.auth) {
+        return Err(actix_web::error::ErrorUnauthorized("Invalid master key"));
+    }
+
+    let systemctl = systemctl::SystemCtl::default();
+    match systemctl.enable(&*id) {
+        Ok(status) => Ok(web::Json(json!({ "success": status.success() }))),
+        Err(e) => Err(actix_web::error::ErrorInternalServerError(format!(
+            "Failed to enable unit: {}",
+            e
+        ))),
+    }
+}
+
+#[get("/disable/{app}")]
+async fn disable_app(id: web::Path<String>, query: web::Query<Auth>) -> Result<impl Responder> {
+    if !validate_master_key(&query.auth) {
+        return Err(actix_web::error::ErrorUnauthorized("Invalid master key"));
+    }
+
+    let systemctl = systemctl::SystemCtl::default();
+    match systemctl.disable(&*id) {
+        Ok(status) => Ok(web::Json(json!({ "success": status.success() }))),
+        Err(e) => Err(actix_web::error::ErrorInternalServerError(format!(
+            "Failed to disable unit: {}",
+            e
+        ))),
+    }
+}
+
+#[get("/start/{app}")]
+async fn start_app(id: web::Path<String>, query: web::Query<Auth>) -> Result<impl Responder> {
+    if !validate_master_key(&query.auth) {
+        return Err(actix_web::error::ErrorUnauthorized("Invalid master key"));
+    }
+
+    let systemctl = systemctl::SystemCtl::default();
+    match systemctl.start(&*id) {
+        Ok(status) => Ok(web::Json(json!({ "success": status.success() }))),
+        Err(e) => Err(actix_web::error::ErrorInternalServerError(format!(
+            "Failed to start unit: {}",
+            e
+        ))),
+    }
+}
+
+#[get("/stop/{app}")]
+async fn stop_app(id: web::Path<String>, query: web::Query<Auth>) -> Result<impl Responder> {
+    if !validate_master_key(&query.auth) {
+        return Err(actix_web::error::ErrorUnauthorized("Invalid master key"));
+    }
+
+    let systemctl = systemctl::SystemCtl::default();
+    match systemctl.stop(&*id) {
+        Ok(status) => Ok(web::Json(json!({ "success": status.success() }))),
+        Err(e) => Err(actix_web::error::ErrorInternalServerError(format!(
+            "Failed to stop unit: {}",
+            e
+        ))),
+    }
+}
+
+#[get("/restart/{app}")]
+async fn restart_app(id: web::Path<String>, query: web::Query<Auth>) -> Result<impl Responder> {
+    if !validate_master_key(&query.auth) {
+        return Err(actix_web::error::ErrorUnauthorized("Invalid master key"));
+    }
+
+    let systemctl = systemctl::SystemCtl::default();
+    match systemctl.restart(&*id) {
+        Ok(status) => Ok(web::Json(json!({ "success": status.success() }))),
+        Err(e) => Err(actix_web::error::ErrorInternalServerError(format!(
+            "Failed to restart unit: {}",
+            e
+        ))),
     }
 }
 
@@ -69,6 +190,11 @@ async fn main() -> std::io::Result<()> {
             .service(sys_info)
             .service(get_apps)
             .service(get_app)
+            .service(enable_app)
+            .service(disable_app)
+            .service(start_app)
+            .service(stop_app)
+            .service(restart_app)
     })
     .bind(("127.0.0.1", 8080))?
     .run()

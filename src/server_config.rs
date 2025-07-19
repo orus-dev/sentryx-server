@@ -22,3 +22,8 @@ pub struct ServerStats {
     pub disk: u8,
     pub network: u64,
 }
+
+pub fn validate_master_key(master_key: &str) -> bool {
+    let config = ServerConfig::new();
+    master_key == config.master_key
+}
