@@ -6,6 +6,9 @@ REPO_URL="https://github.com/orus-dev/sentryx-server.git"
 INSTALL_DIR="$HOME/sentryx-server"
 SERVICE_NAME="sentryx-server"
 SERVICE_FILE="$HOME/.config/systemd/user/$SERVICE_NAME.service"
+CARGO_BIN="$(which cargo)"
+
+mv $INSTALL_DIR $INSTALL_DIR+"-backup"
 
 # Step 1: Clone the repo
 if [ -d "$INSTALL_DIR" ]; then
@@ -26,7 +29,7 @@ Description=SentryX Server
 [Service]
 Type=simple
 WorkingDirectory=$INSTALL_DIR
-ExecStart=cargo run --release
+ExecStart=$CARGO_BIN run --release
 Restart=on-failure
 
 [Install]
