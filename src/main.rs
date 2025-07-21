@@ -72,6 +72,7 @@ async fn get_apps(query: web::Query<Auth>) -> Result<impl Responder> {
         Ok(units) => Ok(web::Json(
             units
                 .iter()
+                .filter(|i| i.ends_with(".service"))
                 .map(|v| match systemctl.status(v) {
                     Ok(unit) => {
                         let a = service::parse_service(unit);

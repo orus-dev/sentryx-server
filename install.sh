@@ -9,6 +9,7 @@ SERVICE_FILE="$HOME/.config/systemd/user/$SERVICE_NAME.service"
 CARGO_BIN="$(which cargo)"
 
 if [ -d $INSTALL_DIR ]; then
+    echo "Sentryx already exists, creating a backup then updating it, NOTE: you will need to transfer configs manually"
     mv $INSTALL_DIR $INSTALL_DIR"-backup"
 fi
 
