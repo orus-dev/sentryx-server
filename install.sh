@@ -1,50 +1,46 @@
 #!/bin/bash
-
 set -e
 
 REPO_URL="https://github.com/orus-dev/sentryx-server.git"
-INSTALL_DIR="$HOME/sentryx-server"
+INSTALL_DIR="$HOME/sentryx-server"  # expanded
 SERVICE_NAME="sentryx-server"
-SERVICE_FILE="$HOME/.config/systemd/user/$SERVICE_NAME.service"
+SERVICE_FILE="/etc/systemd/system/$SERVICE_NAME.service"
 CARGO_BIN="$(which cargo)"
+RUN_USER="$(whoami)"  # change if needed
 
-if [ -d $INSTALL_DIR ]; then
-    echo "Sentryx already exists, creating a backup then updating it, NOTE: you will need to transfer configs manually"
-    mv $INSTALL_DIR $INSTALL_DIR"-backup"
-fi
-
-# Step 1: Clone the repo
+# Backup if exists
 if [ -d "$INSTALL_DIR" ]; then
-    echo "Directory $INSTALL_DIR already exists. Pulling latest changes..."
-    git -C "$INSTALL_DIR" pull
-else
-    echo "Cloning $REPO_URL into $INSTALL_DIR..."
-    git clone "$REPO_URL" "$INSTALL_DIR"
+    echo "Sentryx already exists, backing up..."
+    rm -rf "$INSTALL_DIR-backup"
+    mv "$INSTALL_DIR" "$INSTALL_DIR-backup"
 fi
 
-# Step 2: Create systemd user service file
-mkdir -p "$(dirname "$SERVICE_FILE")"
+# Clone as current user
+git clone "$REPO_URL" "$INSTALL_DIR"
 
-cat > "$SERVICE_FILE" <<EOF
+# Build as current user inside INSTALL_DIR
+$CARGO_BIN build --release --manifest-path "$INSTALL_DIR/Cargo.toml"
+
+# Create systemd service file with absolute ExecStart path
+echo "Creating systemd service..."
+sudo tee "$SERVICE_FILE" > /dev/null <<EOF
 [Unit]
 Description=SentryX Server
+After=network.target
 
 [Service]
 Type=simple
+User=$RUN_USER
 WorkingDirectory=$INSTALL_DIR
-ExecStart=$CARGO_BIN run --release
+ExecStart=$INSTALL_DIR/target/release/sentryx-server
 Restart=on-failure
 
 [Install]
-WantedBy=default.target
+WantedBy=multi-user.target
 EOF
 
-# Step 3: Reload systemd, enable and start service
-echo "Reloading user systemd daemon..."
-systemctl --user daemon-reexec
-systemctl --user daemon-reload
+# Reload systemd and enable service
+sudo systemctl daemon-reload
+sudo systemctl enable --now "$SERVICE_NAME.service"
 
-echo "Enabling and starting the service..."
-systemctl --user enable --now "$SERVICE_NAME.service"
-
-echo "Installation complete. Use 'systemctl --user status $SERVICE_NAME' to check the service status."
+echo "Done! Check service with: sudo systemctl status $SERVICE_NAME"
