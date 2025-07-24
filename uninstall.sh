@@ -3,7 +3,7 @@ set -e
 
 SERVICE_NAME="sentryx-server"
 SERVICE_FILE="/etc/systemd/system/$SERVICE_NAME.service"
-INSTALL_DIR="$HOME/sentryx-server"  # Make sure this matches your install script
+INSTALL_DIR="$HOME/sentryx-server"
 
 echo "Stopping and disabling systemd service..."
 sudo systemctl stop "$SERVICE_NAME.service" || true
